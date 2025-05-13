@@ -1,5 +1,5 @@
 library(shiny)
-library(slurmr)
+library(slurmR)
 
 ui <- fluidPage(
   titlePanel("Launch and Monitor Slurm Jobs"),
