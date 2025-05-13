@@ -1,3 +1,24 @@
+library(shiny)
+library(rslurm)
+
+# User Interface (UI)
+ui <- fluidPage(
+  titlePanel("Launch and Monitor Slurm Jobs"),
+  sidebarLayout(
+    sidebarPanel(
+      numericInput("num_processes", "Number of Processes (1-10):", min = 1, max = 10, value = 3),
+      actionButton("launch_jobs", "Launch Jobs")
+    ),
+    mainPanel(
+      h4("Job Status:"),
+      verbatimTextOutput("job_status"),
+      h4("Node Information:"),
+      verbatimTextOutput("node_info")
+    )
+  )
+)
+
+# Server Logic
 server <- function(input, output, session) {
   job_ids <- reactiveVal(NULL)
   job_info <- reactiveVal(data.frame(job_id = character(0), name = character(0), status = character(0), node = character(0), stringsAsFactors = FALSE))
@@ -21,19 +42,19 @@ server <- function(input, output, session) {
     submitted_jobs <- slurm_map(slurm_tasks)
     if (!is.null(submitted_jobs) && !is.null(submitted_jobs$job_id)) {
       job_ids(submitted_jobs$job_id)
-      new_job_info <- data.frame(job_id = submitted_jobs$job_id, name = job_names, status = "PENDING", node = NA, stringsAsFactors = FALSE)
-      job_info(new_job_info)
+      initial_job_info <- data.frame(job_id = submitted_jobs$job_id, name = job_names, status = "PENDING", node = NA, stringsAsFactors = FALSE)
+      job_info(initial_job_info)
     }
   })
 
   output$job_status <- renderPrint({
-    if (is.null(job_ids())) {
-      return("") # Return an empty string if no jobs have been launched
+    job_ids_val <- job_ids()
+    if (is.null(job_ids_val) || length(job_ids_val) == 0) {
+      return("")
     }
 
-    current_job_ids <- job_ids()
     status_data <- tryCatch({
-      squeue(job = current_job_ids, state = "all", o = "jobid,name,state")
+      squeue(job = job_ids_val, state = "all", o = "jobid,name,state")
     }, error = function(e) {
       NULL
     })
@@ -56,13 +77,13 @@ server <- function(input, output, session) {
   })
 
   output$node_info <- renderPrint({
-    if (is.null(job_ids())) {
-      return("") # Return an empty string if no jobs have been launched
+    job_ids_val <- job_ids()
+    if (is.null(job_ids_val) || length(job_ids_val) == 0) {
+      return("")
     }
 
-    current_job_ids <- job_ids()
     node_data <- tryCatch({
-      squeue(job = current_job_ids, state = "RUNNING", o = "jobid,nodelist")
+      squeue(job = job_ids_val, state = "RUNNING", o = "jobid,nodelist")
     }, error = function(e) {
       NULL
     })
@@ -92,4 +113,5 @@ server <- function(input, output, session) {
   })
 }
 
+# Run the application
 shinyApp(ui = ui, server = server)
