@@ -1,22 +1,3 @@
-library(shiny)
-library(rslurm)
-
-ui <- fluidPage(
-  titlePanel("Launch and Monitor Slurm Jobs"),
-  sidebarLayout(
-    sidebarPanel(
-      numericInput("num_processes", "Number of Processes (1-10):", min = 1, max = 10, value = 3),
-      actionButton("launch_jobs", "Launch Jobs")
-    ),
-    mainPanel(
-      h4("Job Status:"),
-      verbatimTextOutput("job_status"),
-      h4("Node Information:"),
-      verbatimTextOutput("node_info")
-    )
-  )
-)
-
 server <- function(input, output, session) {
   job_ids <- reactiveVal(NULL)
   job_info <- reactiveVal(data.frame(job_id = character(0), name = character(0), status = character(0), node = character(0), stringsAsFactors = FALSE))
@@ -41,65 +22,65 @@ server <- function(input, output, session) {
     if (!is.null(submitted_jobs) && !is.null(submitted_jobs$job_id)) {
       job_ids(submitted_jobs$job_id)
       new_job_info <- data.frame(job_id = submitted_jobs$job_id, name = job_names, status = "PENDING", node = NA, stringsAsFactors = FALSE)
-      job_info(new_job_info) # Replace instead of rbind initially
+      job_info(new_job_info)
     }
   })
 
   output$job_status <- renderPrint({
-    current_job_ids <- job_ids()
-    if (!is.null(current_job_ids)) {
-      status_data <- tryCatch({
-        squeue(job = current_job_ids, state = "all", o = "jobid,name,state")
-      }, error = function(e) {
-        NULL
-      })
+    if (is.null(job_ids())) {
+      return("") # Return an empty string if no jobs have been launched
+    }
 
-      if (!is.null(status_data) && nrow(status_data) > 0) {
-        updated_info <- job_info()
-        for (i in 1:nrow(updated_info)) {
-          match_row <- which(status_data$JOBID == updated_info$job_id[i])
-          if (length(match_row) > 0) {
-            updated_info$status[i] <- as.character(status_data$ST[match_row])
-          }
+    current_job_ids <- job_ids()
+    status_data <- tryCatch({
+      squeue(job = current_job_ids, state = "all", o = "jobid,name,state")
+    }, error = function(e) {
+      NULL
+    })
+
+    if (!is.null(status_data) && nrow(status_data) > 0) {
+      updated_info <- job_info()
+      for (i in 1:nrow(updated_info)) {
+        match_row <- which(status_data$JOBID == updated_info$job_id[i])
+        if (length(match_row) > 0) {
+          updated_info$status[i] <- as.character(status_data$ST[match_row])
         }
-        job_info(updated_info)
-        print(job_info()[, c("name", "status")])
-      } else if (!is.null(status_data)) {
-        print("No jobs running or pending.")
-      } else {
-        print("Error retrieving job status from Slurm.")
       }
+      job_info(updated_info)
+      print(job_info()[, c("name", "status")])
+    } else if (!is.null(status_data)) {
+      print("No jobs running or pending.")
     } else {
-      print("No jobs launched yet.")
+      print("Error retrieving job status from Slurm.")
     }
   })
 
   output$node_info <- renderPrint({
-    current_job_ids <- job_ids()
-    if (!is.null(current_job_ids)) {
-      node_data <- tryCatch({
-        squeue(job = current_job_ids, state = "RUNNING", o = "jobid,nodelist")
-      }, error = function(e) {
-        NULL
-      })
+    if (is.null(job_ids())) {
+      return("") # Return an empty string if no jobs have been launched
+    }
 
-      if (!is.null(node_data) && nrow(node_data) > 0) {
-        updated_info <- job_info()
-        for (i in 1:nrow(updated_info)) {
-          match_row <- which(node_data$JOBID == updated_info$job_id[i])
-          if (length(match_row) > 0) {
-            updated_info$node[i] <- as.character(node_data$NODELIST[match_row])
-          }
+    current_job_ids <- job_ids()
+    node_data <- tryCatch({
+      squeue(job = current_job_ids, state = "RUNNING", o = "jobid,nodelist")
+    }, error = function(e) {
+      NULL
+    })
+
+    if (!is.null(node_data) && nrow(node_data) > 0) {
+      updated_info <- job_info()
+      for (i in 1:nrow(updated_info)) {
+        match_row <- which(node_data$JOBID == updated_info$job_id[i])
+        if (length(match_row) > 0) {
+          updated_info$node[i] <- as.character(node_data$NODELIST[match_row])
         }
-        job_info(updated_info)
-        print(job_info()[!is.na(job_info()$node), c("name", "node")])
-      } else if (!is.null(node_data)) {
-        print("No jobs currently running to display node information.")
-      } else {
-        print("Error retrieving node information from Slurm.")
       }
+      job_info(updated_info)
+      print(job_info()[!is.na(job_info()$node), c("name", "node")])
+    } else if (!is.null(node_data)) {
+      print("No jobs currently running to display node information.")
     } else {
-      print("No jobs launched yet.")
+      print("Error retrieving node information from Slurm.")
     }
   })
 
