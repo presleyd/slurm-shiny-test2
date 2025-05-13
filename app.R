@@ -19,7 +19,7 @@ ui <- fluidPage(
 
 server <- function(input, output, session) {
   job_ids <- reactiveVal(NULL)
-  job_info <- reactiveVal(NULL)
+  job_info <- reactiveVal(data.frame(job_id = character(0), name = character(0), status = character(0), node = character(0), stringsAsFactors = FALSE))
 
   observeEvent(input$launch_jobs, {
     num_processes <- input$num_processes
@@ -41,14 +41,20 @@ server <- function(input, output, session) {
     # Submit the Slurm jobs
     submitted_jobs <- slurm_map(slurm_tasks)
     job_ids(submitted_jobs$job_id)
-    job_info(data.frame(job_id = submitted_jobs$job_id, name = job_names, status = "PENDING", node = NA))
+    new_job_info <- data.frame(job_id = submitted_jobs$job_id, name = job_names, status = "PENDING", node = NA, stringsAsFactors = FALSE)
+    job_info(rbind(job_info(), new_job_info))
   })
 
   output$job_status <- renderPrint({
     current_job_ids <- job_ids()
     if (!is.null(current_job_ids)) {
-      status <- squeue(job = current_job_ids, state = "all", o = "jobid,name,state")
-      if (nrow(status) > 0) {
+      status <- tryCatch({
+        squeue(job = current_job_ids, state = "all", o = "jobid,name,state")
+      }, error = function(e) {
+        NULL # Return NULL if squeue fails
+      })
+
+      if (!is.null(status) && nrow(status) > 0) {
         updated_job_info <- job_info()
         for (i in 1:nrow(updated_job_info)) {
           job_match <- which(status$JOBID == updated_job_info$job_id[i])
@@ -57,9 +63,11 @@ server <- function(input, output, session) {
           }
         }
         job_info(updated_job_info)
-        print(updated_job_info[, c("name", "status")])
-      } else {
+        print(job_info()[, c("name", "status")])
+      } else if (!is.null(status)) {
         print("No jobs running or pending.")
+      } else {
+        print("Error retrieving job status from Slurm.")
       }
     } else {
       print("No jobs launched yet.")
@@ -69,8 +77,13 @@ server <- function(input, output, session) {
   output$node_info <- renderPrint({
     current_job_ids <- job_ids()
     if (!is.null(current_job_ids)) {
-      node_data <- squeue(job = current_job_ids, state = "RUNNING", o = "jobid,nodelist")
-      if (nrow(node_data) > 0) {
+      node_data <- tryCatch({
+        squeue(job = current_job_ids, state = "RUNNING", o = "jobid,nodelist")
+      }, error = function(e) {
+        NULL # Return NULL if squeue fails
+      })
+
+      if (!is.null(node_data) && nrow(node_data) > 0) {
         updated_job_info <- job_info()
         for (i in 1:nrow(updated_job_info)) {
           node_match <- which(node_data$JOBID == updated_job_info$job_id[i])
@@ -80,8 +93,10 @@ server <- function(input, output, session) {
         }
         job_info(updated_job_info)
         print(job_info()[!is.na(job_info()$node), c("name", "node")])
-      } else {
+      } else if (!is.null(node_data)) {
         print("No jobs currently running to display node information.")
+      } else {
+        print("Error retrieving node information from Slurm.")
       }
     } else {
       print("No jobs launched yet.")
